@@ -1,0 +1,6 @@
+PyGithub==2.8.1
+flask==3.1.2
+langchain-ollama
+langchain-core
+langchain-anthropic
+langchain-openai
