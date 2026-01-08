@@ -46,16 +46,19 @@ Then open: **http://localhost:5000**
 1. The workflow file is already in `.github/workflows/pr-review.yml`
 2. Add API key to repo secrets:
    - Go to repo Settings → Secrets → Actions
-   - Add `ANTHROPIC_API_KEY` (or use GITHUB_TOKEN for free Ollama alternative)
+   - Add `ANTHROPIC_API_KEY` with your Claude API key
 3. Done! Every new PR gets reviewed automatically
 
 **How it works:**
 - PR opened → GitHub Action triggers → AI reviews → Posts comment
 - Runs on GitHub's servers (FREE!)
 - No terminal, no server, fully automatic
+- **Auto-detects LLM**: Uses Claude if `ANTHROPIC_API_KEY` is set, otherwise Ollama
 
-**To use Ollama instead of Claude:**
-Edit `.github/workflows/pr-review.yml` and remove the Anthropic key requirement.
+**Important:** GitHub Actions run on cloud servers, not your machine. They **cannot access your local Ollama**. You have three options:
+1. **Use Claude API** (recommended) - Add `ANTHROPIC_API_KEY` secret
+2. **Install Ollama in action** (slow) - See Option 3A below
+3. **Self-hosted runner** (best of both) - See Option 3B below
 
 ---
 
@@ -87,15 +90,93 @@ docker-compose up -d
 
 ---
 
+### Option 3A: GitHub Action with Ollama Installed (Free but Slow)
+
+If you want to use Ollama in GitHub Actions without paying for Claude API:
+
+**Modify `.github/workflows/pr-review.yml`:**
+
+```yaml
+- name: Install Ollama
+  run: |
+    curl -fsSL https://ollama.com/install.sh | sh
+    ollama serve &
+    sleep 10
+    ollama pull gemma3:4b
+
+- name: Run AI PR Review
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  run: |
+    # Rest of workflow...
+```
+
+**Downsides:**
+- Adds 2-3 minutes to every PR review
+- Downloads model every time (~2GB)
+- Uses your free GitHub Actions minutes (2,000/month limit)
+- Slower model (gemma3:4b) vs Claude
+
+**When to use:** You have no budget for API calls and can tolerate slower reviews.
+
+---
+
+### Option 3B: Self-Hosted GitHub Runner with Local Ollama (BEST FREE OPTION!)
+
+Run GitHub Actions on **your own machine** where Ollama is already installed:
+
+**Setup:**
+
+1. **On your local machine** (where Ollama is running):
+```bash
+# Create a directory for the runner
+mkdir actions-runner && cd actions-runner
+
+# Download the latest runner
+curl -o actions-runner-osx-x64-2.314.1.tar.gz -L https://github.com/actions/runner/releases/download/v2.314.1/actions-runner-osx-x64-2.314.1.tar.gz
+
+# Extract
+tar xzf ./actions-runner-osx-x64-2.314.1.tar.gz
+
+# Configure
+./config.sh --url https://github.com/youcefjd/ai-pr-review --token YOUR_TOKEN
+
+# Run (keeps running in background)
+./run.sh
+```
+
+2. **Update `.github/workflows/pr-review.yml`:**
+```yaml
+jobs:
+  ai-review:
+    runs-on: self-hosted  # Changed from ubuntu-latest
+```
+
+**Benefits:**
+- Uses your local Ollama (FREE!)
+- No API costs
+- Fast (model already downloaded)
+- Unlimited usage
+- Runs automatically on every PR
+
+**Downsides:**
+- Requires your machine to be running
+- Slightly more setup
+- Security: Only do this on repos you trust
+
+**When to use:** You want automatic PR reviews, free Ollama, and your machine is usually on.
+
+---
+
 ## 🚀 Quick Comparison
 
-| Method | Server Needed | Terminal Needed | Cost | Best For |
-|--------|--------------|-----------------|------|----------|
-| Web Dashboard | Yes (local/server) | Only to start | Free | Visual monitoring |
-| GitHub Action | No | No | Free* | Automatic reviews |
-| Docker | Yes (server) | Only to start | Server cost | Production 24/7 |
-
-*Free tier: 2,000 minutes/month
+| Method | Server Needed | Terminal Needed | LLM Cost | Best For |
+|--------|--------------|-----------------|----------|----------|
+| Web Dashboard | Yes (local/server) | Only to start | Free (Ollama) or $$ (Claude) | Visual monitoring |
+| GitHub Action | No | No | $$ (Claude API) | Cloud automation |
+| GitHub Action + Install Ollama | No | No | Free (slow) | Budget-conscious |
+| Self-Hosted Runner + Ollama | Yes (your machine) | Only to start | FREE! | Best free option |
+| Docker | Yes (server) | Only to start | Free (Ollama) or $$ (Claude) | Production 24/7 |
 
 ---
 
@@ -146,18 +227,13 @@ File is already in: `.github/workflows/pr-review.yml`
 3. See "Autonomous PR Review" workflow running
 4. Check PR comments for the review
 
-### Using Free Ollama Instead
+### Auto-Detection: Claude vs Ollama
 
-Edit `.github/workflows/pr-review.yml`:
+The agent **automatically detects** which LLM to use:
+- If `ANTHROPIC_API_KEY` is set → Uses Claude (cloud)
+- If not set → Uses Ollama (requires installation, see Option 3A or 3B above)
 
-```yaml
-# Remove this line:
-ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-
-# The agent will use Ollama by default (free!)
-```
-
-**Note:** GitHub Actions runners don't have Ollama installed, so you'll need to modify the agent to use Claude/GPT or add Ollama installation step.
+**For free Ollama in GitHub Actions:** See **Option 3A** (install in action) or **Option 3B** (self-hosted runner) above.
 
 ---
 

@@ -3,10 +3,12 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
 from langchain_ollama import ChatOllama
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from tools import write_file, run_shell
 import json
+import os
 from mcp_servers.docker_tools import (
     docker_ps, docker_logs, docker_exec, docker_restart,
     docker_inspect, docker_compose_up
@@ -24,8 +26,21 @@ class BaseSubAgent(ABC):
     
     def __init__(self, agent_name: str, system_prompt: str):
         self.agent_name = agent_name
-        # Use available Ollama model
-        self.llm = ChatOllama(model="gemma3:4b", temperature=0.7)
+
+        # Auto-detect LLM: Use Claude if API key available, otherwise Ollama
+        if os.getenv("ANTHROPIC_API_KEY"):
+            # GitHub Actions or cloud deployment with Claude
+            self.llm = ChatAnthropic(
+                model="claude-3-5-sonnet-20241022",
+                temperature=0.7,
+                anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
+            )
+            self.llm_type = "claude"
+        else:
+            # Local development with Ollama
+            self.llm = ChatOllama(model="gemma3:4b", temperature=0.7)
+            self.llm_type = "ollama"
+
         self.system_prompt = system_prompt
         self.tools = self._get_available_tools()
         self.execution_history = []
