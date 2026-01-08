@@ -1,0 +1,93 @@
+name: Autonomous PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install PyGithub langchain-ollama langchain-core langchain-anthropic
+
+      - name: Run AI PR Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cd autonomous_reviewer
+          python << 'EOF'
+          import os
+          import sys
+          sys.path.insert(0, '.')
+
+          from github_integration import GitHubClient
+          from pr_review_agent import PRReviewAgent
+
+          # Get PR info from environment
+          repo = os.getenv('GITHUB_REPOSITORY')
+          pr_number = int(os.getenv('GITHUB_REF').split('/')[2]) if 'pull' in os.getenv('GITHUB_REF', '') else None
+
+          if not pr_number:
+              # Try getting from event
+              import json
+              with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as f:
+                  event = json.load(f)
+                  pr_number = event.get('pull_request', {}).get('number')
+
+          if not pr_number:
+              print("❌ Could not determine PR number")
+              sys.exit(1)
+
+          print(f"🤖 Reviewing PR #{pr_number} in {repo}")
+
+          # Initialize
+          token = os.getenv('GITHUB_TOKEN')
+          client = GitHubClient(token=token)
+          agent = PRReviewAgent()
+
+          # Get PR data
+          metadata = client.get_pr_metadata(repo, pr_number)
+          diff = client.get_pr_diff(repo, pr_number)
+
+          # Review
+          result = agent.execute("Review this PR", context={
+              "diff": diff,
+              "pr_title": metadata["title"],
+              "pr_description": metadata["description"]
+          })
+
+          if result['status'] == 'success':
+              meta = result['metadata']
+              print(f"✅ Review complete: {meta['issues_found']} issues")
+
+              # Check if already reviewed
+              if not client.has_been_reviewed(repo, pr_number):
+                  # Post review
+                  post_result = client.post_review_comment(repo, pr_number, result)
+
+                  if post_result['status'] == 'success':
+                      print(f"✅ Posted review: {post_result['url']}")
+                  else:
+                      print(f"❌ Failed to post: {post_result.get('message')}")
+              else:
+                  print("ℹ️  Already reviewed, skipping")
+          else:
+              print(f"❌ Review failed: {result.get('message')}")
+              sys.exit(1)
+          EOF

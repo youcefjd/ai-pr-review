@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  pr-review-dashboard:
+    build: .
+    container_name: autonomous-pr-review
+    ports:
+      - "5000:5000"
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    networks:
+      - pr-review-network
+
+networks:
+  pr-review-network:
+    driver: bridge
